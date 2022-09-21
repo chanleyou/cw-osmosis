@@ -12,8 +12,10 @@ pub enum ContractError {
     #[error("ZeroBalance")]
     ZeroBalance {},
 
-    #[error("Custom Error val: {val:?}")]
-    CustomError { val: String },
-    // Add any other custom errors you like here.
+    #[error("CompoundFailed")]
+    CompoundFailed {},
+
+    #[error("UnknownReplyId: {id:?}")]
+    UnknownReplyId { id: u64 },
     // Look at https://docs.rs/thiserror/1.0.21/thiserror/ for details.
 }

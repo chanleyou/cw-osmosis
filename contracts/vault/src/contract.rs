@@ -1,13 +1,16 @@
+use std::error::Error;
+
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::{
     entry_point, to_binary, Addr, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdError,
     StdResult, SubMsg,
 };
-use cosmwasm_std::{CosmosMsg, Uint128};
+use cosmwasm_std::{CosmosMsg, Reply};
 use cw2::set_contract_version;
 use osmosis_std::types::cosmos::base::v1beta1::Coin as CoinProtobuf;
 use osmosis_std::types::osmosis::gamm::v1beta1::{
-    GammQuerier, MsgJoinPool, MsgJoinSwapExternAmountIn, QueryPoolRequest, QueryPoolResponse,
+    GammQuerier, MsgJoinSwapExternAmountIn, MsgJoinSwapExternAmountInResponse, QueryPoolRequest,
+    QueryPoolResponse,
 };
 
 use crate::error::ContractError;
@@ -18,7 +21,7 @@ use crate::state::{Params, PARAMS};
 const CONTRACT_NAME: &str = "crates.io:vault";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-const COMPOUND_REPLY_ID: u64 = 1;
+const COMPOUND_REPLY_ERROR_ID: u64 = 1;
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
@@ -62,6 +65,7 @@ pub fn try_join(deps: DepsMut, info: MessageInfo) -> Result<Response, ContractEr
     Ok(Response::new().add_attribute("method", "try_join"))
 }
 
+// TODO: make this permissioned
 pub fn try_compound(
     deps: DepsMut,
     address: Addr,
@@ -88,11 +92,25 @@ pub fn try_compound(
     // TODO
 
     Ok(Response::new()
-        .add_submessage(SubMsg::reply_on_success(msg, COMPOUND_REPLY_ID))
+        .add_submessage(SubMsg::reply_on_error(msg, COMPOUND_REPLY_ERROR_ID))
         .add_attribute("method", "try_compound"))
 }
 
-// these queries will not work until osmosis v12, see: https://lib.rs/crates/osmosis-std
+// #[cfg_attr(not(feature = "library"), entry_point)]
+// pub fn reply(_deps: DepsMut, _env: Env, msg: Reply) -> Result<Response, ContractError> {
+//     match msg.id {
+//         COMPOUND_REPLY_ERROR_ID => Result::Err(ContractError::CompoundFailed {}),
+//         id => Result::Err(ContractError::UnknownReplyId { id }),
+//     }
+// }
+
+// fn handle_compound_success_reply(
+//     deps: DepsMut,
+//     reply: MsgJoinSwapExternAmountInResponse,
+// ) -> StdResult<Response> {
+// }
+
+// queries will not work until osmosis v12, see: https://lib.rs/crates/osmosis-std
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {

@@ -17,7 +17,7 @@
 ### Optimize
 
 ```shell
-sudo docker run --rm -v "$(pwd)":/code \
+docker run --rm -v "$(pwd)":/code \
     --mount type=volume,source="$(basename "$(pwd)")_cache",target=/code/target \
     --mount type=volume,source=registry_cache,target=/usr/local/cargo/registry \
     cosmwasm/rust-optimizer:0.12.8
@@ -26,7 +26,7 @@ sudo docker run --rm -v "$(pwd)":/code \
 ### Upload
 
 ```
-osmosisd tx wasm store artifacts/$CONTRACT_NAME.wasm --from wallet --gas-prices 0.1uosmo --gas auto --gas-adjustment 1.3 -y --output json -b block
+osmosisd tx wasm store artifacts/vault.wasm --from wallet --gas-prices 0.1uosmo --gas auto --gas-adjustment 1.3 -y --output json -b block
 ```
 
 Response
@@ -44,7 +44,7 @@ Response
 					"attributes": [
 						{
 							"key": "code_id",
-							"value": "1520" // this value
+							"value": "1531" // this value
 						}
 					]
 				}
@@ -59,21 +59,32 @@ Get the `store_code` event's `code_id` in the JSON response for the step:
 ### Instantiate
 
 ```shell
-INIT='{"count":100}'
-osmosisd tx wasm instantiate $CODE_ID "$INIT" \
- --from wallet --label "my first contract" --gas-prices 0.025uosmo --gas auto --gas-adjustment 1.3 -b block -y --no-admin
+CODE_ID='1531'
+INIT='{"pool_id":2}'
+osmosisd tx wasm instantiate $CODE_ID $INIT \
+ --from wallet --label "vault" --gas-prices 0.025uosmo --gas auto --gas-adjustment 1.3 -b block -y --no-admin
 ```
 
 ### Read
 
 ```shell
 QUERY='{"get_count": {}}'
-osmosisd query wasm contract-state smart $CONTRACT_ADDR "QUERY" --output json
+osmosisd query wasm contract-state smart $CONTRACT_ADDR $QUERY --output json
 ```
 
 ### Write
 
+Join
+
 ```shell
-TRY_INCREMENT='{"increment": {}}'
-osmosisd tx wasm execute $CONTRACT_ADDR "$TRY_INCREMENT" --from wallet --gas-prices 0.025uosmo --gas auto --gas-adjustment 1.3 -y
+JOIN='{"join": {}}'
+AMOUNT='10000000uosmo'
+osmosisd tx wasm execute $CONTRACT_ADDR $JOIN --from wallet --gas-prices 0.025uosmo --gas auto --gas-adjustment 1.3 --amount $AMOUNT -y
+```
+
+Compound
+
+```shell
+COMPOUND='{"compound": { "min_shares": 1 }}'
+osmosisd tx wasm execute $CONTRACT_ADDR $COMPOUND --from wallet --gas-prices 0.025uosmo --gas auto --gas-adjustment 1.3 -y
 ```
