@@ -1,0 +1,20 @@
+[package]
+name = "vault"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+cosmwasm-std = "1.1.0"
+cosmwasm-storage = "1.1.0"
+cosmwasm-schema = "1.1.0"
+cw-storage-plus = "0.14.0"
+cw2 = "0.14.0"
+schemars = "0.8.10"
+serde = { version = "1.0.144", default-features = false, features = ["derive"] }
+thiserror = "1.0.33"
+osmosis-std = "0.1.6"
