@@ -4,12 +4,13 @@ use cw_storage_plus::{Item, Map};
 
 pub const WHITELIST: Map<&Addr, bool> = Map::new("whitelist");
 
+/// Vault Parameters
 #[cw_serde]
-pub struct Params {
+pub struct Parameters {
     pub pool_id: u64,
-    pub lock_period: u64, // TODO all this stuff
+    pub lock_duration: u64, // TODO: "24h" | "168h" | "336h"
     pub fee: u64,
     // accepted_denoms
 }
 
-pub const PARAMS: Item<Params> = Item::new("params");
+pub const PARAMETERS: Item<Parameters> = Item::new("parameters");
