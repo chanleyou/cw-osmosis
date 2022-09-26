@@ -17,4 +17,4 @@ cw2 = "0.14.0"
 schemars = "0.8.10"
 serde = { version = "1.0.144", default-features = false, features = ["derive"] }
 thiserror = "1.0.33"
-osmosis-std = "0.1.6"
+osmosis-std = "0.1.7"

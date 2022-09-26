@@ -39,7 +39,7 @@ Get the `store_code` event's `code_id` in the JSON response for the step:
 					"attributes": [
 						{
 							"key": "code_id",
-							"value": "1531" // this value
+							"value": "1793" // this value
 						}
 					]
 				}
@@ -53,8 +53,8 @@ Get the `store_code` event's `code_id` in the JSON response for the step:
 ### Instantiate
 
 ```shell
-CODE_ID='1531'
-INIT='{"pool_id":2}'
+CODE_ID='1793'
+INIT='{"pool_id":1, "lock_duration": 0}'
 osmosisd tx wasm instantiate $CODE_ID $INIT \
  --from wallet --label "vault" --gas-prices 0.025uosmo --gas auto --gas-adjustment 1.3 -b block -y --no-admin
 ```
@@ -79,7 +79,7 @@ osmosisd tx wasm execute $CONTRACT_ADDR $COMPOUND --from wallet --gas-prices 0.0
 ### Query
 
 ```shell
-QUERY='{"get_count": {}}'
+QUERY='{"query_pool_request": {"pool_id": 1}}'
 osmosisd query wasm contract-state smart $CONTRACT_ADDR $QUERY --output json
 ```
 

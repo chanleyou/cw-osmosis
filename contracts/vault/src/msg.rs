@@ -1,5 +1,5 @@
 use cosmwasm_schema::{cw_serde, QueryResponses};
-use osmosis_std::types::osmosis::gamm::v1beta1::{QueryPoolRequest, QueryPoolResponse};
+use osmosis_std::types::osmosis::gamm::v1beta1::{QueryNumPoolsResponse, QueryPoolResponse};
 
 #[cw_serde]
 pub struct InstantiateMsg {
@@ -18,5 +18,7 @@ pub enum ExecuteMsg {
 #[derive(QueryResponses)]
 pub enum QueryMsg {
     #[returns(QueryPoolResponse)]
-    Query(QueryPoolRequest),
+    QueryPoolRequest { pool_id: u64 },
+    #[returns(QueryNumPoolsResponse)]
+    QueryNumPoolsRequest {},
 }
