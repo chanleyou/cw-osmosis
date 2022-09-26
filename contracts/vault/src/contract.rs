@@ -1,12 +1,12 @@
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::{
-    entry_point, to_binary, Addr, Binary, Coin, CosmosMsg, Deps, DepsMut, Env, MessageInfo, Reply,
-    Response, StdResult, SubMsg, Uint128,
+    entry_point, to_binary, Addr, Binary, Coin, CosmosMsg, Deps, DepsMut, Env, MessageInfo,
+    Querier, Reply, Response, StdResult, SubMsg, Uint128,
 };
 use cw2::set_contract_version;
-use osmosis_std::types::cosmos::base::v1beta1::Coin as CoinProtobuf;
+use osmosis_std::types::cosmos::base::v1beta1::Coin as OsmosisCoin;
 use osmosis_std::types::osmosis::gamm::v1beta1::{
-    GammQuerier, MsgJoinSwapExternAmountIn, MsgJoinSwapExternAmountInResponse,
+    GammQuerier, MsgJoinSwapExternAmountIn, MsgJoinSwapExternAmountInResponse, Pool,
 };
 use osmosis_std::types::osmosis::superfluid::{
     MsgLockAndSuperfluidDelegate, MsgLockAndSuperfluidDelegateResponse, MsgSuperfluidUnbondLock,
@@ -38,15 +38,15 @@ pub fn instantiate(
         denom: format!("gamm/pool/{}", msg.pool_id),
     };
 
-    // this will not work until Osmosis v12
-    // let res = GammQuerier::new(&deps.querier).pool(msg.pool_id)?;
+    let res = GammQuerier::new(&deps.querier).pool(msg.pool_id)?;
+    let pool = res.pool.unwrap();
 
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
     PARAMETERS.save(deps.storage, &params)?;
 
     Ok(Response::new()
         .add_attribute("method", "instantiate")
-        .add_attribute("pool_id", msg.pool_id.to_string())
+        .add_attribute("pool_id", pool.id.to_string())
         .add_attribute("lock_duration", msg.lock_duration.to_string()))
 }
 
@@ -84,7 +84,7 @@ pub fn try_deposit(
                     sender: address.to_string(),
                     pool_id: params.pool_id,
                     share_out_min_amount: "1".to_string(), // TODO
-                    token_in: Some(CoinProtobuf::from(c.clone())),
+                    token_in: Some(OsmosisCoin::from(c.clone())),
                 });
 
                 Some(SubMsg::reply_on_success(msg, MINT_SHARES_REPLY_ID))
@@ -123,7 +123,7 @@ pub fn try_compound(
         sender: address.to_string(),
         pool_id: params.pool_id,
         share_out_min_amount: min_shares.to_string(),
-        token_in: Some(CoinProtobuf::from(balance)),
+        token_in: Some(OsmosisCoin::from(balance)),
     });
 
     Ok(Response::new()
@@ -164,7 +164,7 @@ fn handle_compound_reply(deps: DepsMut, msg: Reply) -> Result<Response, Contract
 
     let msg = CosmosMsg::from(MsgLockAndSuperfluidDelegate {
         sender: "todo".to_string(),
-        coins: vec![CoinProtobuf::from(Coin {
+        coins: vec![OsmosisCoin::from(Coin {
             amount: Uint128::from(res.share_out_amount.parse::<u64>().unwrap()),
             denom: params.denom,
         })],
