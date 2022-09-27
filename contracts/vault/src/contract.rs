@@ -236,9 +236,15 @@ mod test {
     use super::*;
 
     // TODO: split into sub-functions
-    fn test_setup<'a>(
-        app: &'a OsmosisTestApp,
-    ) -> (SigningAccount, u64, Wasm<'a, OsmosisTestApp>, String) {
+    fn test_setup<'a>() -> (
+        OsmosisTestApp,
+        SigningAccount,
+        u64,
+        Wasm<'a, OsmosisTestApp>,
+        String,
+    ) {
+        let app = OsmosisTestApp::new();
+
         let account = app
             .init_account(&[
                 Coin::new(1_000_000_000_000, "uatom"),
@@ -280,14 +286,12 @@ mod test {
             .data
             .address;
 
-        (account, pool_id, wasm, contract_addr)
+        (app, account, pool_id, wasm, contract_addr)
     }
 
     #[test]
     fn assert_stuff() {
-        let app = OsmosisTestApp::new();
-
-        let (account, pool_id, wasm, contract_addr) = test_setup(&app);
+        let (app, account, pool_id, wasm, contract_addr) = test_setup();
 
         let res = wasm
             .query::<QueryMsg, QueryNumPoolsResponse>(
