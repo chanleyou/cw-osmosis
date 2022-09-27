@@ -7,6 +7,7 @@ use cw2::set_contract_version;
 use osmosis_std::types::cosmos::base::v1beta1::Coin as OsmosisCoin;
 use osmosis_std::types::osmosis::gamm::v1beta1::{
     GammQuerier, MsgJoinSwapExternAmountIn, MsgJoinSwapExternAmountInResponse, Pool,
+    QueryNumPoolsResponse, QueryPoolResponse,
 };
 use osmosis_std::types::osmosis::superfluid::{
     MsgLockAndSuperfluidDelegate, MsgLockAndSuperfluidDelegateResponse, MsgSuperfluidUnbondLock,
@@ -38,15 +39,15 @@ pub fn instantiate(
         denom: format!("gamm/pool/{}", msg.pool_id),
     };
 
-    let res = GammQuerier::new(&deps.querier).pool(msg.pool_id)?;
-    let pool = res.pool.unwrap();
+    // let res = GammQuerier::new(&deps.querier).pool(msg.pool_id)?;
+    // let pool = res.pool.unwrap();
 
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
     PARAMETERS.save(deps.storage, &params)?;
 
     Ok(Response::new()
         .add_attribute("method", "instantiate")
-        .add_attribute("pool_id", pool.id.to_string())
+        .add_attribute("pool_id", msg.pool_id.to_string())
         .add_attribute("lock_duration", msg.lock_duration.to_string()))
 }
 
@@ -182,22 +183,85 @@ fn handle_lock_delegate_reply(_deps: DepsMut, msg: Reply) -> Result<Response, Co
 }
 
 // https://github.com/osmosis-labs/osmosis/blob/main/wasmbinding/stargate_whitelist.go
-// #[cfg_attr(not(feature = "library"), entry_point)]
-// pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
-//     match msg {
-//         QueryMsg::QueryPoolRequest { pool_id } => to_binary(&query_pool(deps, pool_id)?),
-//         QueryMsg::QueryNumPoolsRequest {} => to_binary(&query_num_pools(deps)?),
-//     }
-// }
+#[cfg_attr(not(feature = "library"), entry_point)]
+pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
+    match msg {
+        QueryMsg::QueryPoolRequest { pool_id } => to_binary(&query_pool(deps, pool_id)?),
+        QueryMsg::QueryNumPoolsRequest {} => to_binary(&query_num_pools(deps)?),
+    }
+}
 
-// fn query_pool(deps: Deps, pool_id: u64) -> StdResult<QueryPoolResponse> {
-//     let res = GammQuerier::new(&deps.querier).pool(pool_id)?;
-//     Ok(QueryPoolResponse { pool: res.pool })
-// }
+fn query_pool(deps: Deps, pool_id: u64) -> StdResult<QueryPoolResponse> {
+    let res = GammQuerier::new(&deps.querier).pool(pool_id)?;
+    Ok(QueryPoolResponse { pool: res.pool })
+}
 
-// fn query_num_pools(deps: Deps) -> StdResult<QueryNumPoolsResponse> {
-//     let res = GammQuerier::new(&deps.querier).num_pools()?;
-//     Ok(QueryNumPoolsResponse {
-//         num_pools: res.num_pools,
-//     })
-// }
+fn query_num_pools(deps: Deps) -> StdResult<QueryNumPoolsResponse> {
+    let res = GammQuerier::new(&deps.querier).num_pools()?;
+    Ok(QueryNumPoolsResponse {
+        num_pools: res.num_pools,
+    })
+}
+
+#[cfg(test)]
+mod test {
+    use osmosis_std::types::osmosis::gamm::v1beta1::QueryPoolResponse;
+    use osmosis_testing::{Gamm, Module, OsmosisTestApp, Wasm};
+
+    use super::*;
+
+    #[test]
+    fn assert_stuff() {
+        let app = OsmosisTestApp::new();
+
+        let account = app
+            .init_account(&[
+                Coin::new(1_000_000_000_000, "uatom"),
+                Coin::new(1_000_000_000_000, "uosmo"),
+            ])
+            .unwrap();
+
+        // create pool
+        let gamm = Gamm::new(&app);
+        let pool_liquidity = vec![Coin::new(1_000, "uatom"), Coin::new(1_000, "uosmo")];
+        let pool_id = gamm
+            .create_basic_pool(&pool_liquidity, &account)
+            .unwrap()
+            .data
+            .pool_id;
+
+        let wasm = Wasm::new(&app);
+
+        let wasm_byte_code = std::fs::read("../../artifacts/vault.wasm").unwrap();
+        let code_id = wasm
+            .store_code(&wasm_byte_code, None, &account)
+            .unwrap()
+            .data
+            .code_id;
+
+        let contract_addr = wasm
+            .instantiate(
+                code_id,
+                &InstantiateMsg {
+                    pool_id,
+                    lock_duration: 0,
+                },
+                None,
+                None,
+                &[],
+                &account,
+            )
+            .unwrap()
+            .data
+            .address;
+
+        let res = wasm
+            .query::<QueryMsg, QueryNumPoolsResponse>(
+                &contract_addr,
+                &QueryMsg::QueryNumPoolsRequest {},
+            )
+            .unwrap();
+
+        assert_eq!(res.num_pools, 1);
+    }
+}

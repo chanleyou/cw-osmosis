@@ -17,4 +17,8 @@ cw2 = "0.14.0"
 schemars = "0.8.10"
 serde = { version = "1.0.144", default-features = false, features = ["derive"] }
 thiserror = "1.0.33"
-osmosis-std = { git = "https://github.com/chanleyou/osmosis-rust", branch = "pool" }
+osmosis-std = "0.1.7"
+# osmosis-std = { git = "https://github.com/chanleyou/osmosis-rust", branch = "pool" }
+
+[dev-dependencies]
+osmosis-testing = "0.1.8"
