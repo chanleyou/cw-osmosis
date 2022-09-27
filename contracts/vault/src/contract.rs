@@ -4,11 +4,13 @@ use cosmwasm_std::{
     Querier, Reply, Response, StdResult, SubMsg, Uint128,
 };
 use cw2::set_contract_version;
+use osmosis_std::shim::Duration;
 use osmosis_std::types::cosmos::base::v1beta1::Coin as OsmosisCoin;
 use osmosis_std::types::osmosis::gamm::v1beta1::{
     GammQuerier, MsgJoinSwapExternAmountIn, MsgJoinSwapExternAmountInResponse, Pool,
     QueryNumPoolsResponse, QueryPoolResponse,
 };
+use osmosis_std::types::osmosis::lockup::{MsgLockTokens, MsgLockTokensResponse};
 use osmosis_std::types::osmosis::superfluid::{
     MsgLockAndSuperfluidDelegate, MsgLockAndSuperfluidDelegateResponse, MsgSuperfluidUnbondLock,
 };
@@ -23,13 +25,14 @@ const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 const MINT_SHARES_REPLY_ID: u64 = 0;
 const COMPOUND_REPLY_ID: u64 = 1;
-const LOCK_DELEGATE_ID: u64 = 2;
+const LOCK_SUPERFLUID_DELEGATE_ID: u64 = 2;
+const LOCK_ID: u64 = 3;
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
     deps: DepsMut,
     _env: Env,
-    _info: MessageInfo,
+    info: MessageInfo,
     msg: InstantiateMsg,
 ) -> Result<Response, ContractError> {
     let params = Parameters {
@@ -69,10 +72,10 @@ pub fn try_deposit(
     info: MessageInfo,
     address: Addr,
 ) -> Result<Response, ContractError> {
-    let funds = info.funds;
     let params = PARAMETERS.load(deps.storage)?;
 
-    let submessages: Vec<SubMsg> = funds
+    let submessages: Vec<SubMsg> = info
+        .funds
         .iter()
         .filter_map(|c| match c.denom.as_str() {
             denom if denom == format!("gamm/pool/{}", params.pool_id) => {
@@ -133,28 +136,39 @@ pub fn try_compound(
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn reply(deps: DepsMut, _env: Env, msg: Reply) -> Result<Response, ContractError> {
+pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractError> {
     match msg.id {
-        MINT_SHARES_REPLY_ID => handle_mint_shares(deps, msg),
-        COMPOUND_REPLY_ID => handle_compound_reply(deps, msg),
-        LOCK_DELEGATE_ID => handle_lock_delegate_reply(deps, msg),
+        MINT_SHARES_REPLY_ID => handle_mint_shares(deps, env, msg),
+        COMPOUND_REPLY_ID => handle_compound_reply(deps, env, msg),
+        LOCK_SUPERFLUID_DELEGATE_ID => handle_superfluid_lock_delegate_reply(deps, msg),
+        LOCK_ID => handle_msg_lock_reply(deps, msg),
         id => Result::Err(ContractError::UnknownReplyId { id }),
     }
 }
 
 // TODO: refactor shared code between combine mint shares and compound
-fn handle_mint_shares(_deps: DepsMut, msg: Reply) -> Result<Response, ContractError> {
+fn handle_mint_shares(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractError> {
     // mint shares for user
     // lock LP for rewards
+    let params = PARAMETERS.load(deps.storage)?;
 
     // TODO: handle errors instead of unwrap
     let data = msg.result.unwrap().data.unwrap();
     let res = MsgJoinSwapExternAmountInResponse::try_from(data)?;
 
-    Ok(Response::new().add_attribute("minted", res.share_out_amount))
+    let msg = CosmosMsg::from(MsgLockAndSuperfluidDelegate {
+        sender: env.contract.address.to_string(),
+        coins: vec![OsmosisCoin::from(Coin {
+            amount: Uint128::from(res.share_out_amount.parse::<u128>().unwrap()),
+            denom: params.denom,
+        })],
+        val_addr: "osmovaloper1c584m4lq25h83yp6ag8hh4htjr92d954kphp96".to_string(), // TODO: unhardcode for mainnet
+    });
+
+    Ok(Response::new().add_submessage(SubMsg::reply_on_success(msg, LOCK_SUPERFLUID_DELEGATE_ID)))
 }
 
-fn handle_compound_reply(deps: DepsMut, msg: Reply) -> Result<Response, ContractError> {
+fn handle_compound_reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractError> {
     // 3. lock LP for rewards
 
     // TODO: handle errors instead of unwrap
@@ -163,21 +177,34 @@ fn handle_compound_reply(deps: DepsMut, msg: Reply) -> Result<Response, Contract
 
     let params = PARAMETERS.load(deps.storage)?;
 
-    let msg = CosmosMsg::from(MsgLockAndSuperfluidDelegate {
-        sender: "todo".to_string(),
+    let msg = CosmosMsg::from(MsgLockTokens {
+        owner: env.contract.address.to_string(),
+        duration: Some(Duration {
+            seconds: 1209600, // 14 day superfluid lockup
+            nanos: 0,
+        }),
         coins: vec![OsmosisCoin::from(Coin {
-            amount: Uint128::from(res.share_out_amount.parse::<u64>().unwrap()),
+            amount: Uint128::from(res.share_out_amount.parse::<u128>().unwrap()),
             denom: params.denom,
         })],
-        val_addr: "todo".to_string(),
     });
 
-    Ok(Response::new().add_submessage(SubMsg::reply_on_success(msg, LOCK_DELEGATE_ID)))
+    Ok(Response::new().add_submessage(SubMsg::reply_on_success(msg, LOCK_ID)))
 }
 
-fn handle_lock_delegate_reply(_deps: DepsMut, msg: Reply) -> Result<Response, ContractError> {
+fn handle_superfluid_lock_delegate_reply(
+    _deps: DepsMut,
+    msg: Reply,
+) -> Result<Response, ContractError> {
     let data = msg.result.unwrap().data.unwrap();
     let res = MsgLockAndSuperfluidDelegateResponse::try_from(data)?;
+
+    Ok(Response::new().add_attribute("lock_id", res.id.to_string()))
+}
+
+fn handle_msg_lock_reply(_deps: DepsMut, msg: Reply) -> Result<Response, ContractError> {
+    let data = msg.result.unwrap().data.unwrap();
+    let res = MsgLockTokensResponse::try_from(data)?;
 
     Ok(Response::new().add_attribute("lock_id", res.id.to_string()))
 }
@@ -198,9 +225,7 @@ fn query_pool(deps: Deps, pool_id: u64) -> StdResult<QueryPoolResponse> {
 
 fn query_num_pools(deps: Deps) -> StdResult<QueryNumPoolsResponse> {
     let res = GammQuerier::new(&deps.querier).num_pools()?;
-    Ok(QueryNumPoolsResponse {
-        num_pools: res.num_pools,
-    })
+    Ok(res)
 }
 
 #[cfg(test)]

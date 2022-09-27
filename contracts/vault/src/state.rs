@@ -8,8 +8,7 @@ pub struct Parameters {
     pub pool_id: u64,
     pub lock_duration: u64, // TODO: "24h" | "168h" | "336h"
     pub fee: u64,
-    pub denom: String,
-    // accepted_denoms
+    pub denom: String, // accepted_denoms
 }
 
 // struct Lock {
