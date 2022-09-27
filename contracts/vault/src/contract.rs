@@ -231,14 +231,14 @@ fn query_num_pools(deps: Deps) -> StdResult<QueryNumPoolsResponse> {
 #[cfg(test)]
 mod test {
     use osmosis_std::types::osmosis::gamm::v1beta1::QueryPoolResponse;
-    use osmosis_testing::{Gamm, Module, OsmosisTestApp, Wasm};
+    use osmosis_testing::{Gamm, Module, OsmosisTestApp, SigningAccount, Wasm};
 
     use super::*;
 
-    #[test]
-    fn assert_stuff() {
-        let app = OsmosisTestApp::new();
-
+    // TODO: split into sub-functions
+    fn test_setup<'a>(
+        app: &'a OsmosisTestApp,
+    ) -> (SigningAccount, u64, Wasm<'a, OsmosisTestApp>, String) {
         let account = app
             .init_account(&[
                 Coin::new(1_000_000_000_000, "uatom"),
@@ -247,7 +247,7 @@ mod test {
             .unwrap();
 
         // create pool
-        let gamm = Gamm::new(&app);
+        let gamm = Gamm::new(app);
         let pool_liquidity = vec![Coin::new(1_000, "uatom"), Coin::new(1_000, "uosmo")];
         let pool_id = gamm
             .create_basic_pool(&pool_liquidity, &account)
@@ -255,7 +255,7 @@ mod test {
             .data
             .pool_id;
 
-        let wasm = Wasm::new(&app);
+        let wasm: Wasm<'a, OsmosisTestApp> = Wasm::new(app);
 
         let wasm_byte_code = std::fs::read("../../artifacts/vault.wasm").unwrap();
         let code_id = wasm
@@ -279,6 +279,15 @@ mod test {
             .unwrap()
             .data
             .address;
+
+        (account, pool_id, wasm, contract_addr)
+    }
+
+    #[test]
+    fn assert_stuff() {
+        let app = OsmosisTestApp::new();
+
+        let (account, pool_id, wasm, contract_addr) = test_setup(&app);
 
         let res = wasm
             .query::<QueryMsg, QueryNumPoolsResponse>(
