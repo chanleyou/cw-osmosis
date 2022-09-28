@@ -11,6 +11,12 @@ pub struct Parameters {
     pub denom: String, // accepted_denoms
 }
 
+#[cw_serde]
+pub struct State {
+    pub lock_id: u64,
+    pub unlock_amount: u64,
+}
+
 // struct Lock {
 //     id: u64,
 //     amount: u64,
@@ -22,3 +28,4 @@ pub struct Parameters {
 
 pub const WHITELIST: Map<&Addr, bool> = Map::new("whitelist");
 pub const PARAMETERS: Item<Parameters> = Item::new("parameters");
+pub const STATE: Item<State> = Item::new("state");

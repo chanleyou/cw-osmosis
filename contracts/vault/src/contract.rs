@@ -1,38 +1,44 @@
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::{
-    entry_point, to_binary, Addr, Binary, Coin, CosmosMsg, Deps, DepsMut, Env, MessageInfo,
-    Querier, Reply, Response, StdResult, SubMsg, Uint128,
+    entry_point, to_binary, Addr, Binary, Coin, CosmosMsg, Deps, DepsMut, Env, MessageInfo, Reply,
+    Response, StdResult, SubMsg, Uint128,
 };
 use cw2::set_contract_version;
 use osmosis_std::shim::Duration;
 use osmosis_std::types::cosmos::base::v1beta1::Coin as OsmosisCoin;
 use osmosis_std::types::osmosis::gamm::v1beta1::{
-    GammQuerier, MsgJoinSwapExternAmountIn, MsgJoinSwapExternAmountInResponse, Pool,
+    GammQuerier, MsgJoinSwapExternAmountIn, MsgJoinSwapExternAmountInResponse,
     QueryNumPoolsResponse, QueryPoolResponse,
 };
-use osmosis_std::types::osmosis::lockup::{MsgLockTokens, MsgLockTokensResponse};
+use osmosis_std::types::osmosis::lockup::{
+    MsgBeginUnlocking, MsgLockTokens, MsgLockTokensResponse,
+};
 use osmosis_std::types::osmosis::superfluid::{
-    MsgLockAndSuperfluidDelegate, MsgLockAndSuperfluidDelegateResponse, MsgSuperfluidUnbondLock,
+    MsgLockAndSuperfluidDelegate, MsgLockAndSuperfluidDelegateResponse, MsgSuperfluidDelegate,
+    MsgSuperfluidUnbondLock,
 };
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
-use crate::state::{Parameters, PARAMETERS};
+use crate::state::{Parameters, State, PARAMETERS, STATE};
 
 // version info for migration info
 const CONTRACT_NAME: &str = "crates.io:vault";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
+// todo: convert to enum
 const MINT_SHARES_REPLY_ID: u64 = 0;
 const COMPOUND_REPLY_ID: u64 = 1;
 const LOCK_SUPERFLUID_DELEGATE_ID: u64 = 2;
 const LOCK_ID: u64 = 3;
+const UNBOND_REPLY_ID: u64 = 4;
+const REDELEGATE_ID: u64 = 5;
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
     deps: DepsMut,
     _env: Env,
-    info: MessageInfo,
+    _info: MessageInfo,
     msg: InstantiateMsg,
 ) -> Result<Response, ContractError> {
     let params = Parameters {
@@ -42,11 +48,18 @@ pub fn instantiate(
         denom: format!("gamm/pool/{}", msg.pool_id),
     };
 
+    let state = State {
+        lock_id: 0,
+        unlock_amount: 0,
+    };
+
     // let res = GammQuerier::new(&deps.querier).pool(msg.pool_id)?;
     // let pool = res.pool.unwrap();
 
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
     PARAMETERS.save(deps.storage, &params)?;
+
+    STATE.save(deps.storage, &state)?;
 
     Ok(Response::new()
         .add_attribute("method", "instantiate")
@@ -64,6 +77,7 @@ pub fn execute(
     match msg {
         ExecuteMsg::Deposit {} => try_deposit(deps, info, env.contract.address),
         ExecuteMsg::Compound { min_shares } => try_compound(deps, env.contract.address, min_shares),
+        ExecuteMsg::Unbond { amount } => try_unbond(deps, env.contract.address, amount),
     }
 }
 
@@ -135,6 +149,22 @@ pub fn try_compound(
         .add_attribute("method", "try_compound"))
 }
 
+pub fn try_unbond(deps: DepsMut, address: Addr, amount: u64) -> Result<Response, ContractError> {
+    // let params = PARAMETERS.load(deps.storage);
+    let mut state = STATE.load(deps.storage)?;
+
+    state.unlock_amount = amount;
+
+    STATE.save(deps.storage, &state)?;
+
+    let msg = CosmosMsg::from(MsgSuperfluidUnbondLock {
+        sender: address.to_string(),
+        lock_id: state.lock_id,
+    });
+
+    Ok(Response::new().add_submessage(SubMsg::reply_on_success(msg, UNBOND_REPLY_ID)))
+}
+
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractError> {
     match msg.id {
@@ -142,8 +172,44 @@ pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractEr
         COMPOUND_REPLY_ID => handle_compound_reply(deps, env, msg),
         LOCK_SUPERFLUID_DELEGATE_ID => handle_superfluid_lock_delegate_reply(deps, msg),
         LOCK_ID => handle_msg_lock_reply(deps, msg),
+        UNBOND_REPLY_ID => handle_unbond_reply(deps, env, msg),
+        REDELEGATE_ID => handle_redelegate_reply(deps, env, msg),
         id => Result::Err(ContractError::UnknownReplyId { id }),
     }
+}
+
+fn handle_unbond_reply(deps: DepsMut, env: Env, _msg: Reply) -> Result<Response, ContractError> {
+    let state = STATE.load(deps.storage)?;
+    let params = PARAMETERS.load(deps.storage)?;
+
+    let msg: CosmosMsg = MsgBeginUnlocking {
+        owner: env.contract.address.to_string(),
+        id: state.lock_id,
+        coins: vec![OsmosisCoin::from(Coin {
+            amount: Uint128::from(state.unlock_amount),
+            denom: params.denom,
+        })],
+    }
+    .into();
+
+    Ok(Response::new().add_submessage(SubMsg::reply_on_success(msg, REDELEGATE_ID)))
+}
+
+fn handle_redelegate_reply(
+    deps: DepsMut,
+    env: Env,
+    _msg: Reply,
+) -> Result<Response, ContractError> {
+    let state = STATE.load(deps.storage)?;
+
+    let msg: CosmosMsg = MsgSuperfluidDelegate {
+        lock_id: state.lock_id,
+        sender: env.contract.address.to_string(),
+        val_addr: "osmovaloper1c584m4lq25h83yp6ag8hh4htjr92d954kphp96".to_string(), // TODO: unhardcode for mainnet
+    }
+    .into();
+
+    Ok(Response::new().add_submessage(SubMsg::new(msg)))
 }
 
 // TODO: refactor shared code between combine mint shares and compound
@@ -193,11 +259,19 @@ fn handle_compound_reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response
 }
 
 fn handle_superfluid_lock_delegate_reply(
-    _deps: DepsMut,
+    deps: DepsMut,
     msg: Reply,
 ) -> Result<Response, ContractError> {
     let data = msg.result.unwrap().data.unwrap();
     let res = MsgLockAndSuperfluidDelegateResponse::try_from(data)?;
+
+    STATE.save(
+        deps.storage,
+        &State {
+            lock_id: res.id,
+            unlock_amount: 0,
+        },
+    )?;
 
     Ok(Response::new().add_attribute("lock_id", res.id.to_string()))
 }
@@ -210,6 +284,7 @@ fn handle_msg_lock_reply(_deps: DepsMut, msg: Reply) -> Result<Response, Contrac
 }
 
 // https://github.com/osmosis-labs/osmosis/blob/main/wasmbinding/stargate_whitelist.go
+// not going to work until osmosis-std updates
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
@@ -230,7 +305,6 @@ fn query_num_pools(deps: Deps) -> StdResult<QueryNumPoolsResponse> {
 
 #[cfg(test)]
 mod test {
-    use osmosis_std::types::osmosis::gamm::v1beta1::QueryPoolResponse;
     use osmosis_testing::{Gamm, Module, OsmosisTestApp, SigningAccount, Wasm};
 
     use super::*;
@@ -287,7 +361,7 @@ mod test {
     fn assert_stuff() {
         let app = OsmosisTestApp::new();
 
-        let (account, pool_id, wasm, contract_addr) = test_setup(&app);
+        let (_account, _pool_id, wasm, contract_addr) = test_setup(&app);
 
         let res = wasm
             .query::<QueryMsg, QueryNumPoolsResponse>(

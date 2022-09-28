@@ -12,6 +12,7 @@ pub struct InstantiateMsg {
 pub enum ExecuteMsg {
     Deposit {},
     Compound { min_shares: u64 },
+    Unbond { amount: u64 },
 }
 
 #[cw_serde]

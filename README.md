@@ -49,11 +49,10 @@ Get the `store_code` event's `code_id` in the JSON response for the step:
 }
 ```
 
-
 ### Instantiate
 
 ```shell
-CODE_ID='1793'
+CODE_ID='1876'
 INIT='{"pool_id":1, "lock_duration": 0}'
 osmosisd tx wasm instantiate $CODE_ID $INIT \
  --from wallet --label "vault" --gas-prices 0.025uosmo --gas auto --gas-adjustment 1.3 -b block -y --no-admin
